@@ -4,8 +4,6 @@ pub mod throttle;
 
 use std::{
     borrow::BorrowMut,
-    collections::{hash_map::DefaultHasher, HashMap, HashSet},
-    hash::{Hash, Hasher},
     net::SocketAddrV4,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -18,6 +16,7 @@ use std::{
 use parking_lot::{Mutex, RwLock};
 use perfect_rand::PerfectRng;
 use pnet::packet::tcp::TcpFlags;
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use serde::Deserialize;
 use tracing::trace;
 
@@ -26,7 +25,7 @@ use crate::{
     processing::SharedData,
     scanner::protocols::{ParseResponseError, Response},
 };
-
+use crate::checksum::cookie;
 use self::{
     protocols::Protocol,
     targets::{ScanRanges, StaticScanRanges},
@@ -36,7 +35,7 @@ use self::{
 pub struct Scanner {
     pub seed: u64,
     pub client: StatelessTcp,
-    pub conns: HashMap<SocketAddrV4, ConnState>,
+    pub conns: FxHashMap<SocketAddrV4, ConnState>,
 }
 
 pub struct ActiveFingerprintingData {
@@ -57,7 +56,7 @@ impl Scanner {
         Scanner {
             seed,
             client,
-            conns: HashMap::<SocketAddrV4, ConnState>::new(),
+            conns: FxHashMap::with_hasher(FxBuildHasher),
         }
     }
 
@@ -86,7 +85,7 @@ pub struct ScannerReceiver {
 
 impl ScannerReceiver {
     pub fn recv_loop(&mut self, ping_timeout: Duration) {
-        let mut received_from_ips = HashSet::<SocketAddrV4>::new();
+        let mut received_from_ips = FxHashSet::<SocketAddrV4>::with_hasher(FxBuildHasher);
         let mut syn_acks_received: usize = 0;
         let mut connections_started: usize = 0;
 
@@ -175,7 +174,7 @@ impl ScannerReceiver {
                     // verify that the ack is the cookie+1
                     let ack_number = tcp.acknowledgement;
 
-                    let original_cookie = cookie(&address, self.scanner.seed);
+                    let original_cookie = cookie(address.ip(), address.port(), self.scanner.seed);
                     let expected_ack = original_cookie + 1;
                     if ack_number != expected_ack {
                         trace!("cookie mismatch for {address} (expected {expected_ack}, got {ack_number})");
@@ -258,7 +257,7 @@ impl ScannerReceiver {
                         )
                     } else {
                         // this means it's the first data packet we got, verify it
-                        let original_cookie = cookie(&address, self.scanner.seed);
+                        let original_cookie = cookie(address.ip(), address.port(), self.scanner.seed);
                         // we never send anything other than the SYN and initial ping so this is
                         // fine
                         let packet_size = protocol.payload(address).len();
@@ -482,16 +481,14 @@ impl ScanSession {
                 let shuffled_index = self.rng.shuffle(packets_sent);
                 let destination_addr = self.ranges.index(shuffled_index as usize);
                 trace!("sending syn to {destination_addr}");
-                scanner_writer.send_syn(destination_addr, cookie(&destination_addr, seed));
+                scanner_writer.send_syn(destination_addr, cookie(destination_addr.ip(), destination_addr.port(), seed));
                 packets_sent += 1;
             }
 
             if packets_sent >= target_count {
                 println!("Finished sending {packets_sent} packets.");
                 break;
-            }
-            // if it's been more than 5 minutes since we started, finish the scan
-            else if (Instant::now() - start).as_secs() > scan_duration_secs {
+            } else if start.elapsed().as_secs() > scan_duration_secs {
                 println!("{scan_duration_secs} seconds passed, finishing scan.");
                 break;
             }
@@ -499,12 +496,6 @@ impl ScanSession {
 
         packets_sent
     }
-}
-
-fn cookie(address: &SocketAddrV4, seed: u64) -> u32 {
-    let mut hasher = DefaultHasher::new();
-    (*address.ip(), address.port(), seed).hash(&mut hasher);
-    hasher.finish() as u32
 }
 
 #[derive(Deserialize, Clone, Copy)]

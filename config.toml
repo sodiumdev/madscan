@@ -12,9 +12,9 @@ sleep_secs = 10
 # and run `iptables -A INPUT -p tcp --dport 61000:65535 -j DROP`
 
 [target]
-addr = "matscan"
-port = 1337
-protocol_version = 47
+addr = "madscan"
+port = 3169
+protocol_version = 767
 
 [scanner]
 enabled = true

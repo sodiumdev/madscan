@@ -4,13 +4,14 @@ use pnet::{
     packet::{
         ethernet::{EtherTypes, Ethernet, MutableEthernetPacket},
         ip::IpNextHeaderProtocols,
-        ipv4::{self, MutableIpv4Packet},
+        ipv4::MutableIpv4Packet,
         tcp::{MutableTcpPacket, TcpOption, TcpOptionPacket},
     },
     util::MacAddr,
 };
-use pnet_macros_support::packet::MutablePacket;
-
+use pnet_macros_support::packet::{MutablePacket, Packet};
+use crate::checksum;
+use crate::checksum::ipv4;
 use crate::net::tcp::ETH_HEADER_LEN;
 
 #[derive(Clone)]
@@ -160,12 +161,14 @@ impl TemplatePacket {
         if !repr.payload.is_empty() {
             mutable_tcp_packet.payload_mut()[..repr.payload.len()].copy_from_slice(repr.payload);
         }
-        let checksum = pnet::packet::tcp::ipv4_checksum(
-            &mutable_tcp_packet.to_immutable(),
+        mutable_tcp_packet.set_checksum(0);
+        
+        mutable_tcp_packet.set_checksum(checksum::tcp(
+            mutable_tcp_packet.packet().as_ptr(),
+            mutable_tcp_packet.packet().len(),
             &self.source_addr,
             &repr.dest_addr,
-        );
-        mutable_tcp_packet.set_checksum(checksum);
+        ));
 
         // IPv4
         let mut mutable_ipv4_packet: MutableIpv4Packet =
@@ -174,7 +177,7 @@ impl TemplatePacket {
         mutable_ipv4_packet
             .set_total_length((IPV4_HEADER_LEN + self.tcp_header_len + repr.payload.len()) as u16);
 
-        mutable_ipv4_packet.set_checksum(ipv4::checksum(&mutable_ipv4_packet.to_immutable()));
+        mutable_ipv4_packet.set_checksum(ipv4(mutable_ipv4_packet.packet()));
 
         // the ethernet fields are already good
 

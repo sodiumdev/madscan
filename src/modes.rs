@@ -1,7 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use rand::{distributions::WeightedIndex, prelude::*};
-
+use tracing::error;
 use crate::{database::Database, scanner::targets::ScanRange};
 
 use self::rescan::Sort;
@@ -123,7 +123,7 @@ impl ModePicker {
             return ScanMode::Slash0;
         }
 
-        let mut rng: rand::rngs::ThreadRng = rand::thread_rng();
+        let mut rng: ThreadRng = thread_rng();
         let modes_vec = self.modes.iter().collect::<Vec<_>>();
 
         // filter by the modes argument
@@ -140,10 +140,9 @@ impl ModePicker {
             modes_vec
                 .iter()
                 // +1 so if it got 0 there's still a chance to do it again
-                .map(|(_, &count)| (count.pow(2)) + 1)
+                .map(|(_, &count)| (count * count) + 1)
                 .collect::<Vec<usize>>(),
-        )
-        .unwrap();
+        ).unwrap();
 
         *modes_vec[dist.sample(&mut rng)].0
     }
@@ -163,7 +162,7 @@ impl ModePicker {
         if let Err(err) =
             std::fs::write("modes.json", serde_json::to_string_pretty(&modes).unwrap())
         {
-            eprintln!("failed to write modes.json: {err}");
+            error!("failed to write modes.json: {err}");
         }
     }
 }

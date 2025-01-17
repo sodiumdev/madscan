@@ -1,7 +1,7 @@
 // download https://iptoasn.com/data/ip2asn-v4-u32.tsv.gz and cache it
 
-use std::{io::BufRead, net::Ipv4Addr, sync::OnceLock, time::Duration};
-
+use std::{hint, io::BufRead, net::Ipv4Addr, sync::OnceLock, time::Duration};
+use std::slice::SliceIndex;
 use crate::scanner::targets::Ipv4Range;
 
 /// A vec of (range, asn) pairs
@@ -41,14 +41,14 @@ pub async fn download() -> anyhow::Result<AsnRanges> {
     Ok(AsnRanges(ranges))
 }
 
-pub async fn get() -> anyhow::Result<&'static AsnRanges> {
-    static ASN_RANGES: OnceLock<AsnRanges> = OnceLock::new();
+static ASN_RANGES: OnceLock<AsnRanges> = OnceLock::new();
 
+pub async fn get() -> anyhow::Result<&'static AsnRanges> {
     if let Some(ranges) = ASN_RANGES.get() {
         return Ok(ranges);
     }
 
-    let ranges = loop {
+    ASN_RANGES.set(loop {
         match download().await {
             Ok(r) => break r,
             Err(e) => {
@@ -57,23 +57,25 @@ pub async fn get() -> anyhow::Result<&'static AsnRanges> {
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }
         }
-    };
-    ASN_RANGES.set(ranges).unwrap();
+    }).unwrap();
 
     Ok(ASN_RANGES.get().unwrap())
 }
 
 impl AsnRanges {
+    #[inline]
     pub fn get_asn(&self, ip: Ipv4Addr) -> Option<u32> {
-        // do a binary search
-
         let mut start = 0;
         let mut end = self.0.len();
 
         while start < end {
             let mid = (start + end) / 2;
 
-            let (range, asn) = &self.0[mid];
+            let (range, asn) = unsafe {
+                hint::assert_unchecked(mid < self.0.len());
+                
+                &*self.0.as_ptr().add(mid)
+            };
 
             if range.start <= ip && ip <= range.end {
                 return Some(*asn);
@@ -89,6 +91,7 @@ impl AsnRanges {
         None
     }
 
+    #[inline]
     pub fn get_ranges_for_asn(&self, asn: u32) -> Vec<Ipv4Range> {
         self.0
             .iter()
@@ -111,6 +114,7 @@ mod tests {
             },
             1,
         )]);
+        
         assert_eq!(asns.get_asn(Ipv4Addr::new(0, 0, 0, 128)), Some(1));
         assert_eq!(
             asns.get_ranges_for_asn(1),

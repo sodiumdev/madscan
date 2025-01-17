@@ -1,7 +1,4 @@
-use std::{
-    mem,
-    net::{Ipv4Addr, SocketAddrV4},
-};
+use std::{hint, mem, net::{Ipv4Addr, SocketAddrV4}};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanRange {
@@ -233,13 +230,18 @@ pub struct StaticScanRange {
 }
 
 impl StaticScanRanges {
+    #[inline]
     pub fn index(&self, index: usize) -> SocketAddrV4 {
-        // binary search to find the range that contains the index
         let mut start = 0;
         let mut end = self.ranges.len();
         while start < end {
             let mid = (start + end) / 2;
-            let range = &self.ranges[mid];
+            let range = unsafe {
+                hint::assert_unchecked(mid < self.ranges.len());
+                
+                &*self.ranges.as_ptr().add(mid)
+            };
+            
             if range.index + range.count <= index {
                 start = mid + 1;
             } else if range.index > index {
@@ -248,6 +250,7 @@ impl StaticScanRanges {
                 return range.range.index(index - range.index);
             }
         }
+        
         panic!("index out of bounds");
     }
 }

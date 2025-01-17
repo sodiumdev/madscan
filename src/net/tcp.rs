@@ -299,8 +299,7 @@ impl StatelessTcpWriteHalf {
     }
 
     pub fn send_tcp(&mut self, repr: PacketRepr) {
-        let source_addr = SocketAddrV4::new(self.source_ip, repr.source_port);
-        let packet = build_tcp_packet(repr, self.gateway_mac, self.interface_mac, source_addr);
+        let packet = build_tcp_packet(repr, self.gateway_mac, self.interface_mac, self.source_ip);
         #[cfg(not(feature = "benchmark"))]
         self.socket.send_blocking(&packet);
     }
@@ -310,7 +309,7 @@ fn build_tcp_packet(
     repr: PacketRepr,
     gateway_mac: Option<MacAddr>,
     interface_mac: Option<MacAddr>,
-    source_addr: SocketAddrV4,
+    source_addr: Ipv4Addr,
 ) -> Vec<u8> {
     let mut template = TemplatePacket::new(TemplatePacketRepr {
         flags: repr.flags,
@@ -319,7 +318,7 @@ fn build_tcp_packet(
         options: repr.options.to_vec(),
         gateway_mac,
         interface_mac,
-        source_addr: *source_addr.ip(),
+        source_addr,
     });
     template
         .build(tcp_template::PacketRepr {

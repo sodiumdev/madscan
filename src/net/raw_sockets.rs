@@ -58,23 +58,22 @@ impl RawSocket {
     pub fn new(name: &str) -> io::Result<RawSocket> {
         let protocol = ETH_P_ALL;
 
-        let lower = unsafe {
-            let lower = libc::socket(
-                libc::AF_PACKET,
-                libc::SOCK_RAW | libc::SOCK_NONBLOCK,
-                protocol.to_be() as i32,
-            );
-            if lower == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            lower
-        };
+        let lower = unsafe { libc::socket(
+            libc::AF_PACKET,
+            libc::SOCK_RAW | libc::SOCK_NONBLOCK,
+            protocol.to_be() as i32,
+        ) };
+        
+        if lower == -1 {
+            return Err(io::Error::last_os_error());
+        }
 
         let mut socket = RawSocket {
             protocol,
             lower,
             ifreq: ifreq_for(name),
         };
+        
         socket.bind_interface()?;
 
         Ok(socket)
@@ -95,48 +94,47 @@ impl RawSocket {
             sll_addr: [0; 8],
         };
 
-        unsafe {
-            let res = libc::bind(
-                self.lower,
-                &sockaddr as *const libc::sockaddr_ll as *const libc::sockaddr,
-                mem::size_of::<libc::sockaddr_ll>() as libc::socklen_t,
-            );
-            if res == -1 {
-                return Err(io::Error::last_os_error());
-            }
+        let res = unsafe { libc::bind(
+            self.lower,
+            &sockaddr as *const libc::sockaddr_ll as *const libc::sockaddr,
+            size_of::<libc::sockaddr_ll>() as libc::socklen_t,
+        ) };
+        
+        if res == -1 {
+            return Err(io::Error::last_os_error());
         }
 
         Ok(())
     }
 
     pub fn recv(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        unsafe {
-            let len = libc::recv(
-                self.lower,
-                buffer.as_mut_ptr() as *mut libc::c_void,
-                buffer.len(),
-                0,
-            );
-            if len == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(len as usize)
+        let len = unsafe { libc::recv(
+            self.lower,
+            buffer.as_mut_ptr() as *mut libc::c_void,
+            buffer.len(),
+            0,
+        ) };
+        
+        if len == -1 {
+            return Err(io::Error::last_os_error());
         }
+        
+        Ok(len as usize)
     }
 
     pub fn send(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        unsafe {
-            let len = libc::send(
-                self.lower,
-                buffer.as_ptr() as *const libc::c_void,
-                buffer.len(),
-                0,
-            );
-            if len == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(len as usize)
+        let len = unsafe { libc::send(
+            self.lower,
+            buffer.as_ptr() as *const libc::c_void,
+            buffer.len(),
+            0,
+        ) };
+        
+        if len == -1 {
+            return Err(io::Error::last_os_error());
         }
+        
+        Ok(len as usize)
     }
 
     pub fn send_blocking(&mut self, buffer: &[u8]) {
@@ -144,7 +142,7 @@ impl RawSocket {
             match self.send(buffer) {
                 Ok(_) => break,
                 Err(err) => match err.kind() {
-                    std::io::ErrorKind::WouldBlock => {}
+                    io::ErrorKind::WouldBlock => {}
                     e => panic!("error sending packet: {:?}", e),
                 },
             }
@@ -157,17 +155,15 @@ impl Clone for RawSocket {
     fn clone(&self) -> Self {
         let protocol = ETH_P_ALL;
 
-        let lower = unsafe {
-            let lower = libc::socket(
-                libc::AF_PACKET,
-                libc::SOCK_RAW | libc::SOCK_NONBLOCK,
-                protocol.to_be() as i32,
-            );
-            if lower == -1 {
-                panic!("{}", io::Error::last_os_error());
-            }
-            lower
-        };
+        let lower = unsafe { libc::socket(
+            libc::AF_PACKET,
+            libc::SOCK_RAW | libc::SOCK_NONBLOCK,
+            protocol.to_be() as i32,
+        ) };
+        
+        if lower == -1 {
+            panic!("{}", io::Error::last_os_error());
+        }
 
         let mut socket = RawSocket {
             protocol,
